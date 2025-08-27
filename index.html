@@ -3,7 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Satire-Balancer – Minimal</title>
+<title>Game of Life – Minimal</title>
+
+<!-- Schriften -->
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
+
 <style>
   :root{
     --bg:#ffffff;
@@ -22,7 +27,10 @@
   .app{height:100%;display:grid;grid-template-rows:auto 1fr auto;gap:12px;padding:12px;max-width:900px;margin:0 auto}
 
   .header,.footer{display:flex;align-items:center;justify-content:space-between;gap:12px}
-  .title{font-weight:800}
+  .title{
+    font-family:"Bebas Neue", system-ui, sans-serif;
+    font-size:1.9rem; letter-spacing:.5px; line-height:1; 
+  }
   .subtitle{color:var(--muted);font-size:.95rem}
   .btn{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer}
   .btn:hover{border-color:#d1d5db}
@@ -98,7 +106,7 @@
 <div class="app">
   <div class="header">
     <div>
-      <div class="title">Satire-Balancer (weiß & minimal)</div>
+      <div class="title">Game of Life</div>
       <div class="subtitle">Tippe zufällig auftauchende Emojis. <strong>Nie zwei Skalen gleichzeitig im Rot-Bereich.</strong></div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
@@ -139,7 +147,7 @@
 
   <div class="footer">
     <div class="subtitle">Rot: Laune/Gesundheit/Energie &lt;20 • Stress &gt;80</div>
-    <div class="subtitle">Decay alle 2 s (Laune−2, Gesundheit−1, Energie−2, Stress+2)</div>
+    <div class="subtitle">Decay: <strong>jede Sekunde</strong> (Laune−2, Gesundheit−2, Energie−2, Stress+2)</div>
   </div>
 </div>
 
@@ -156,8 +164,10 @@
 /* ===== Config ===== */
 const THRESHOLDS = { lowRed:20, stressRed:80 };
 const START = { laune:55, gesundheit:60, stress:45, energie:50 };
-const DECAY = { laune:-2, gesundheit:-1, energie:-2, stress:+2 };
-const DECAY_INTERVAL_MS = 2000;
+
+/* Jede Sekunde -2 Punkte (Stress +2) */
+const DECAY = { laune:-2, gesundheit:-2, energie:-2, stress:+2 };
+const DECAY_INTERVAL_MS = 1000;
 
 /* Anzeige-Leben pro Element */
 const CHIP_LIFE_MS = 3000;       // insgesamt 3 s sichtbar
@@ -270,8 +280,8 @@ function spawnOnce(){
     pf.appendChild(el);
 
     // Fade nach 2 s, Entfernen nach 3 s
-    setTimeout(()=>{ if(document.body.contains(el)) el.classList.add('aging'); }, CHIP_FADE_START_MS);
-    setTimeout(()=>{ if(document.body.contains(el)) el.remove(); }, CHIP_LIFE_MS);
+    setTimeout(()=>{ if(document.body.contains(el)) el.classList.add('aging'); }, 2000);
+    setTimeout(()=>{ if(document.body.contains(el)) el.remove(); }, 3000);
   }
 }
 

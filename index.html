@@ -146,7 +146,7 @@
 
   <div class="footer">
     <div class="subtitle">Rot-Bereiche: Laune/Gesundheit/Energie &lt; <strong>20</strong> • Stress &gt; <strong>80</strong></div>
-    <div class="subtitle">Spawn: zufällig 1–2 Elemente mit wechselnden Positionen</div>
+    <div class="subtitle">Alle 2 s: natürliche Verschlechterung (Laune↓, Gesundheit↓, Energie↓, Stress↑)</div>
   </div>
 </div>
 
@@ -167,6 +167,10 @@
 const THRESHOLDS = { lowRed:20, stressRed:80 };
 const START = { laune:55, gesundheit:60, stress:45, energie:50 };
 
+/* natürlicher Verfall alle 2 Sekunden (schlechter für den Spieler) */
+const DECAY = { laune:-2, gesundheit:-1, energie:-2, stress:+2 };
+const DECAY_INTERVAL_MS = 2000;
+
 const ACTIONS = [
   { id:'bier',    emoji:'🍺', effects:{ laune:+12, gesundheit:-10, stress:0,  energie:-8 } },
   { id:'zig',     emoji:'🚬', effects:{ laune:+8,  gesundheit:-9,  stress:-8, energie:0 } },
@@ -181,6 +185,7 @@ const ACTIONS = [
 /* ===== State ===== */
 let state = { values:{...START}, turns:0 };
 let spawnTimer = null;
+let decayTimer = null;
 
 /* ===== DOM ===== */
 const pf = document.getElementById('playfield');
@@ -262,14 +267,12 @@ function checkLose(){
     whyList.innerHTML = reds.map(([n,txt])=>`<div class="row"><span class="dot"></span><span>${n}: ${txt}</span></div>`).join('');
     overlayEl.style.display = 'grid';
     stopSpawning();
+    stopDecay();
   }
 }
 
-/* ===== Spawning ===== */
-function clearChips(){
-  [...pf.querySelectorAll('.chip')].forEach(n=>n.remove());
-}
-
+/* ===== Spawning (Frequenz erhöht) ===== */
+function clearChips(){ [...pf.querySelectorAll('.chip')].forEach(n=>n.remove()); }
 function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
 function choice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 
@@ -294,8 +297,8 @@ const PRESETS = [
 function spawnOnce(){
   clearChips();
 
-  // decide 1 or 2 chips (weight toward 1 a bit)
-  const count = Math.random()<0.65 ? 1 : 2;
+  // erhöhte Chance auf zwei Chips
+  const count = Math.random()<0.45 ? 1 : 2;
 
   // choose preset of enough points, else random positions
   let points = choice(PRESETS.filter(p=>p.length===count));
@@ -327,29 +330,42 @@ function spawnOnce(){
       if(el.classList.contains('fade')) return;
       el.classList.add('fade');
       applyEffects(act.effects);
-      // remove shortly after click
-      setTimeout(()=>{ el.remove(); if(pf.querySelectorAll('.chip').length===0){ /* nothing */ } }, 120);
+      setTimeout(()=>{ el.remove(); }, 120);
     });
 
     pf.appendChild(el);
   });
 
-  // auto-despawn after 2.5–4s
-  const life = randInt(2500, 4000);
-  setTimeout(()=>{
-    [...pf.querySelectorAll('.chip')].forEach(n=> n.remove());
-  }, life);
+  // schnellere Despawn-Zeit
+  const life = randInt(1800, 2800);
+  setTimeout(()=>{ clearChips(); }, life);
 }
 
 function startSpawning(){
   stopSpawning();
   spawnOnce();
-  spawnTimer = setInterval(()=>{
-    spawnOnce();
-  }, randInt(1400, 2200));
+  // höhere Schlagzahl
+  spawnTimer = setInterval(()=>{ spawnOnce(); }, randInt(700, 1100));
 }
-function stopSpawning(){
-  if(spawnTimer){ clearInterval(spawnTimer); spawnTimer = null; }
+function stopSpawning(){ if(spawnTimer){ clearInterval(spawnTimer); spawnTimer = null; } }
+
+/* ===== Natural Decay ===== */
+function decayTick(){
+  // Laune↓, Gesundheit↓, Energie↓, Stress↑
+  state.values.laune      = clamp01(state.values.laune + DECAY.laune);
+  state.values.gesundheit = clamp01(state.values.gesundheit + DECAY.gesundheit);
+  state.values.energie    = clamp01(state.values.energie + DECAY.energie);
+  state.values.stress     = clamp01(state.values.stress + DECAY.stress);
+  renderScales();
+  checkLose();
+}
+
+function startDecay(){
+  stopDecay();
+  decayTimer = setInterval(decayTick, DECAY_INTERVAL_MS);
+}
+function stopDecay(){
+  if(decayTimer){ clearInterval(decayTimer); decayTimer = null; }
 }
 
 /* ===== Reset / Init ===== */
@@ -359,9 +375,11 @@ function reset(){
   renderScales();
   clearChips();
   startSpawning();
+  startDecay();
 }
 renderScales();
 startSpawning();
+startDecay();
 
 /* Resize: reflow chip positions next wave */
 window.addEventListener('resize', ()=>{ /* chips repositioned on next spawn */ });

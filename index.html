@@ -16,7 +16,6 @@
     --red:#ef4444;
     --barH:14px;
     --barW:14px;
-    --radius:10px;
   }
   *{box-sizing:border-box}
   html,body{height:100%;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
@@ -62,13 +61,14 @@
   #leftScale{grid-row:1/4;grid-column:1}
   #rightScale{grid-row:1/4;grid-column:3}
 
+  /* Spielfeld */
   .playfield{
     grid-row:2;grid-column:2;
     position:relative;background:#fff;border:1px dashed var(--line);border-radius:16px;overflow:hidden;
   }
   .hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:var(--muted);font-size:.9rem;pointer-events:none}
 
-  /* Chips */
+  /* Elemente (Chips) */
   .chip{
     position:absolute;display:flex;align-items:center;justify-content:center;
     width:64px;height:64px;border-radius:16px;border:1px solid var(--line);background:#fff;
@@ -78,8 +78,7 @@
   }
   .chip:active{transform:translateY(1px) scale(.98)}
   .chip:hover{box-shadow:0 6px 18px rgba(0,0,0,.06)}
-  .chip.clicked{opacity:.3}
-  .chip.aging{opacity:0;}
+  .chip.aging{opacity:0;} /* Fade in 1s */
 
   /* Overlay */
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;place-items:center;padding:16px}
@@ -87,6 +86,12 @@
   .why{margin-top:8px;text-align:left;border:1px solid var(--line);border-radius:10px;padding:10px;background:#fafafa}
   .why .row{display:flex;gap:8px;align-items:center}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block}
+
+  @media (max-width:680px){
+    .board{height:calc(100vh - 160px)}
+    .chip{width:60px;height:60px;font-size:28px}
+    .scale-h .name{min-width:80px}
+  }
 </style>
 </head>
 <body>
@@ -94,7 +99,7 @@
   <div class="header">
     <div>
       <div class="title">Satire-Balancer (weiß & minimal)</div>
-      <div class="subtitle">Klick auf zufällig auftauchende Emojis. <strong>Nie zwei Skalen gleichzeitig im Rot-Bereich.</strong></div>
+      <div class="subtitle">Tippe zufällig auftauchende Emojis. <strong>Nie zwei Skalen gleichzeitig im Rot-Bereich.</strong></div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <div id="turns" class="subtitle">Züge: 0</div>
@@ -133,8 +138,8 @@
   </div>
 
   <div class="footer">
-    <div class="subtitle">Rot-Bereiche: Laune/Gesundheit/Energie &lt;20 • Stress &gt;80</div>
-    <div class="subtitle">Alle 2 s: Decay (Laune−2, Gesundheit−1, Energie−2, Stress+2)</div>
+    <div class="subtitle">Rot: Laune/Gesundheit/Energie &lt;20 • Stress &gt;80</div>
+    <div class="subtitle">Decay alle 2 s (Laune−2, Gesundheit−1, Energie−2, Stress+2)</div>
   </div>
 </div>
 
@@ -148,11 +153,17 @@
 </div>
 
 <script>
+/* ===== Config ===== */
 const THRESHOLDS = { lowRed:20, stressRed:80 };
 const START = { laune:55, gesundheit:60, stress:45, energie:50 };
 const DECAY = { laune:-2, gesundheit:-1, energie:-2, stress:+2 };
 const DECAY_INTERVAL_MS = 2000;
 
+/* Anzeige-Leben pro Element */
+const CHIP_LIFE_MS = 3000;       // insgesamt 3 s sichtbar
+const CHIP_FADE_START_MS = 2000; // ab 2 s weich ausfaden (1 s)
+
+/* Aktionen (Soforteffekte) */
 const ACTIONS = [
   { emoji:'🍺', effects:{ laune:+12, gesundheit:-10, energie:-8 } },
   { emoji:'🚬', effects:{ laune:+8, gesundheit:-9, stress:-8 } },
@@ -164,6 +175,7 @@ const ACTIONS = [
   { emoji:'⚡', effects:{ gesundheit:-8, energie:+14 } },
 ];
 
+/* ===== State & DOM ===== */
 let state = { values:{...START}, turns:0 };
 let spawnTimer=null, decayTimer=null;
 
@@ -187,11 +199,15 @@ const whyList=document.getElementById('whyList');
 document.getElementById('resetBtn').addEventListener('click',reset);
 document.getElementById('againBtn').addEventListener('click',reset);
 
+/* ===== Utils ===== */
 const clamp=v=>Math.max(0,Math.min(100,v));
 function colorFor(key,v){
   if(key==='stress'){ if(v>80) return 'var(--red)'; if(v>65) return 'var(--bad)'; if(v>40) return 'var(--warn)'; return 'var(--ok)'; }
   else { if(v<20) return 'var(--red)'; if(v<35) return 'var(--bad)'; if(v<60) return 'var(--warn)'; return 'var(--ok)'; }
 }
+const rand=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
+
+/* ===== Render ===== */
 function render(){
   bars.laune.style.width=state.values.laune+'%';
   bars.energie.style.width=state.values.energie+'%';
@@ -207,6 +223,8 @@ function render(){
   vals.stress.textContent=Math.round(state.values.stress)+'%';
   turnsEl.textContent='Züge: '+state.turns;
 }
+
+/* ===== Game Logic ===== */
 function apply(eff){
   state.turns++;
   for(const[k,d] of Object.entries(eff)){ state.values[k]=clamp(state.values[k]+d); }
@@ -214,37 +232,72 @@ function apply(eff){
 }
 function check(){
   const reds=[];
-  if(state.values.laune<20) reds.push('🙂 Laune <20');
-  if(state.values.gesundheit<20) reds.push('❤️ Gesundheit <20');
-  if(state.values.energie<20) reds.push('⚡ Energie <20');
-  if(state.values.stress>80) reds.push('🔥 Stress >80');
-  if(reds.length>=2){ whyList.innerHTML=reds.map(r=>`<div class="row"><span class="dot"></span>${r}</div>`).join(''); overlayEl.style.display='grid'; stop(); }
+  if(state.values.laune<THRESHOLDS.lowRed) reds.push('🙂 Laune <20');
+  if(state.values.gesundheit<THRESHOLDS.lowRed) reds.push('❤️ Gesundheit <20');
+  if(state.values.energie<THRESHOLDS.lowRed) reds.push('⚡ Energie <20');
+  if(state.values.stress>THRESHOLDS.stressRed) reds.push('🔥 Stress >80');
+  if(reds.length>=2){
+    whyList.innerHTML=reds.map(r=>`<div class="row"><span class="dot"></span>${r}</div>`).join('');
+    overlayEl.style.display='grid';
+    stop();
+  }
 }
-function decay(){ for(const[k,d] of Object.entries(DECAY)){ state.values[k]=clamp(state.values[k]+d);} render(); check(); }
+function decay(){
+  for(const[k,d] of Object.entries(DECAY)){ state.values[k]=clamp(state.values[k]+d); }
+  render(); check();
+}
 
+/* ===== Spawning ===== */
 function spawnOnce(){
   const count=Math.random()<0.45?1:2;
-  const picks=new Array(count).fill(0).map(_=>ACTIONS[Math.floor(Math.random()*ACTIONS.length)]);
   const rect=pf.getBoundingClientRect();
   const size=Math.min(64,Math.max(56,Math.floor(Math.min(rect.width,rect.height)*0.12)));
-  picks.forEach((act,i)=>{
+
+  for(let i=0;i<count;i++){
+    const act=ACTIONS[Math.floor(Math.random()*ACTIONS.length)];
     const el=document.createElement('div');
     el.className='chip'; el.textContent=act.emoji;
     el.style.width=size+'px'; el.style.height=size+'px';
     el.style.left=Math.round(Math.random()*(rect.width-size))+'px';
-    el.style.top=Math.round(Math.random()*(rect.height-size))+'px';
-    el.addEventListener('click',()=>{ if(el.classList.contains('clicked'))return; el.classList.add('clicked'); apply(act.effects); });
+    el.style.top =Math.round(Math.random()*(rect.height-size))+'px';
+
+    // Klick: sofortiger Effekt + sofort verschwinden
+    el.addEventListener('click',()=>{
+      apply(act.effects);
+      if(document.body.contains(el)) el.remove();
+    });
+
     pf.appendChild(el);
-    setTimeout(()=>{ if(document.body.contains(el)) el.classList.add('aging'); },4000);
-    setTimeout(()=>{ if(document.body.contains(el)) el.remove(); },5000);
-  });
+
+    // Fade nach 2 s, Entfernen nach 3 s
+    setTimeout(()=>{ if(document.body.contains(el)) el.classList.add('aging'); }, CHIP_FADE_START_MS);
+    setTimeout(()=>{ if(document.body.contains(el)) el.remove(); }, CHIP_LIFE_MS);
+  }
 }
-function start(){ spawnOnce(); spawnTimer=setInterval(spawnOnce,rand(700,1100)); decayTimer=setInterval(decay,2000); }
-function stop(){ clearInterval(spawnTimer); clearInterval(decayTimer); }
-function rand(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
-function reset(){ overlayEl.style.display='none'; state={values:{...START},turns:0}; render(); pf.innerHTML='<div class="hint">Tippe die auftauchenden Emojis</div>'; start(); }
+
+function start(){
+  spawnOnce();
+  spawnTimer=setInterval(spawnOnce, rand(700,1100));
+  decayTimer=setInterval(decay, DECAY_INTERVAL_MS);
+}
+function stop(){
+  if(spawnTimer) clearInterval(spawnTimer);
+  if(decayTimer) clearInterval(decayTimer);
+  spawnTimer=decayTimer=null;
+}
+
+/* ===== Reset / Init ===== */
+function reset(){
+  overlayEl.style.display='none';
+  state={values:{...START},turns:0};
+  render();
+  pf.innerHTML='<div class="hint">Tippe die auftauchenden Emojis</div>';
+  start();
+}
 
 render(); start();
+
+/* Reflow bei Resize: neue Spawns passen sich an; existierende bleiben bis Lebensende */
 </script>
 </body>
 </html>

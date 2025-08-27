@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Satire-Balancer – Minimal</title>
+<style>
+  :root{
+    --bg:#ffffff;
+    --fg:#111111;
+    --muted:#6b7280;
+    --line:#e5e7eb;
+    --ok:#16a34a;
+    --warn:#f59e0b;
+    --bad:#f97316;
+    --red:#ef4444;
+    --barH:14px;
+    --barW:14px;
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+  .app{height:100%;display:grid;grid-template-rows:auto 1fr auto;gap:12px;padding:12px;max-width:900px;margin:0 auto}
+
+  .header,.footer{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .title{font-weight:800}
+  .subtitle{color:var(--muted);font-size:.95rem}
+  .btn{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer}
+  .btn:hover{border-color:#d1d5db}
+
+  /* Board: 3x3 – Top scale, center row with left scale | playfield | right scale, bottom scale */
+  .board{
+    display:grid;
+    grid-template-rows: var(--barH) 1fr var(--barH);
+    grid-template-columns: var(--barW) 1fr var(--barW);
+    gap:8px;
+    height:calc(100vh - 140px); /* roughly header+footer space */
+    min-height:420px;
+  }
+
+  /* Scales */
+  .scale-h{
+    grid-column: 1 / 4;
+    height:var(--barH);
+    background:#fff;border:1px solid var(--line);border-radius:999px;display:flex;align-items:center;padding:0 8px;gap:8px
+  }
+  .scale-h .name{min-width:92px;font-size:.85rem;color:var(--muted)}
+  .meter{position:relative;flex:1;height:8px;background:#f3f4f6;border-radius:999px;overflow:hidden}
+  .bar{position:absolute;left:0;top:0;bottom:0;width:50%;background:var(--ok);transition:width .2s ease, background-color .2s ease}
+  .value{min-width:60px;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);font-size:.85rem}
+
+  .scale-v{
+    width:var(--barW);
+    background:#fff;border:1px solid var(--line);border-radius:999px;display:flex;flex-direction:column;align-items:center;padding:6px 0;gap:6px
+  }
+  .scale-v .name{writing-mode:vertical-rl;transform:rotate(180deg);font-size:.75rem;color:var(--muted)}
+  .meter-v{position:relative;width:8px;flex:1;background:#f3f4f6;border-radius:999px;overflow:hidden}
+  .bar-v{position:absolute;left:0;bottom:0;width:100%;height:50%;background:var(--ok);transition:height .2s ease, background-color .2s ease}
+  .value-v{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.75rem}
+
+  /* positions in grid */
+  #topScale{grid-row:1;grid-column:1/4}
+  #bottomScale{grid-row:3;grid-column:1/4}
+  #leftScale{grid-row:1/4;grid-column:1}
+  #rightScale{grid-row:1/4;grid-column:3}
+
+  /* Playfield */
+  .playfield{
+    grid-row:2;grid-column:2;
+    position:relative;background:#fff;border:1px dashed var(--line);border-radius:16px;overflow:hidden;
+  }
+  .hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:var(--muted);font-size:.9rem;pointer-events:none}
+
+  /* Spawned action chips */
+  .chip{
+    position:absolute;display:flex;align-items:center;justify-content:center;
+    width:64px;height:64px;border-radius:16px;border:1px solid var(--line);background:#fff;
+    font-size:32px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.04);
+    transition:transform .08s ease, box-shadow .2s ease, opacity .2s ease;
+  }
+  .chip:active{transform:translateY(1px) scale(.98)}
+  .chip:hover{box-shadow:0 6px 18px rgba(0,0,0,.06)}
+  .chip.fade{opacity:.3}
+
+  /* Lose overlay */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;place-items:center;padding:16px}
+  .modal{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;max-width:520px;width:100%;text-align:center}
+  .why{margin-top:8px;text-align:left;border:1px solid var(--line);border-radius:10px;padding:10px;background:#fafafa}
+  .why .row{display:flex;gap:8px;align-items:center}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block}
+
+  @media (max-width:680px){
+    .board{height:calc(100vh - 160px)}
+    .chip{width:60px;height:60px;font-size:28px}
+    .scale-h .name{min-width:80px}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div>
+      <div class="title">Satire-Balancer (weiß & minimal)</div>
+      <div class="subtitle">Klick auf zufällig auftauchende Emojis im Spielfeld. <strong>Nie zwei Skalen gleichzeitig im Rot-Bereich.</strong></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <div id="turns" class="subtitle">Züge: 0</div>
+      <button class="btn" id="resetBtn">Neustart</button>
+    </div>
+  </div>
+
+  <div class="board">
+    <!-- Top horizontal scale (Laune) -->
+    <div id="topScale" class="scale-h">
+      <div class="name">🙂 Laune</div>
+      <div class="meter"><div id="bar-laune" class="bar"></div></div>
+      <div id="val-laune" class="value">—</div>
+    </div>
+
+    <!-- Left vertical scale (Gesundheit) -->
+    <div id="leftScale" class="scale-v">
+      <div class="name">Gesundheit</div>
+      <div class="meter-v"><div id="bar-gesundheit" class="bar-v"></div></div>
+      <div id="val-gesundheit" class="value-v">—</div>
+    </div>
+
+    <!-- Playfield (spawn area) -->
+    <div id="playfield" class="playfield">
+      <div class="hint">Tippe die auftauchenden Emojis</div>
+    </div>
+
+    <!-- Right vertical scale (Stress) -->
+    <div id="rightScale" class="scale-v">
+      <div class="name" style="color:var(--muted)">Stress</div>
+      <div class="meter-v"><div id="bar-stress" class="bar-v"></div></div>
+      <div id="val-stress" class="value-v">—</div>
+    </div>
+
+    <!-- Bottom horizontal scale (Energie) -->
+    <div id="bottomScale" class="scale-h">
+      <div class="name">⚡ Energie</div>
+      <div class="meter"><div id="bar-energie" class="bar"></div></div>
+      <div id="val-energie" class="value">—</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="subtitle">Rot-Bereiche: Laune/Gesundheit/Energie &lt; <strong>20</strong> • Stress &gt; <strong>80</strong></div>
+    <div class="subtitle">Spawn: zufällig 1–2 Elemente mit wechselnden Positionen</div>
+  </div>
+</div>
+
+<!-- Lose -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h2>🚨 Doppel-Rot!</h2>
+    <p>Zwei Skalen im kritischen Bereich. Versuch’s nochmal – vielleicht mit 💧 & 🥗.</p>
+    <div class="why" id="whyList"></div>
+    <div style="margin-top:10px;display:flex;gap:8px;justify-content:center">
+      <button class="btn" id="againBtn">Nochmal</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===== Config ===== */
+const THRESHOLDS = { lowRed:20, stressRed:80 };
+const START = { laune:55, gesundheit:60, stress:45, energie:50 };
+
+const ACTIONS = [
+  { id:'bier',    emoji:'🍺', effects:{ laune:+12, gesundheit:-10, stress:0,  energie:-8 } },
+  { id:'zig',     emoji:'🚬', effects:{ laune:+8,  gesundheit:-9,  stress:-8, energie:0 } },
+  { id:'kaffee',  emoji:'☕', effects:{ laune:0,   gesundheit:0,   stress:-6, energie:+12 } },
+  { id:'wasser',  emoji:'💧', effects:{ laune:-3,  gesundheit:+10, stress:0,  energie:0 } },
+  { id:'salat',   emoji:'🥗', effects:{ laune:-4,  gesundheit:+11, stress:0,  energie:+6 } },
+  { id:'burger',  emoji:'🍔', effects:{ laune:+9,  gesundheit:-10, stress:0,  energie:+8 } },
+  { id:'schoko',  emoji:'🍫', effects:{ laune:+8,  gesundheit:-6,  stress:0,  energie:+6 } },
+  { id:'energy',  emoji:'⚡', effects:{ laune:0,   gesundheit:-8,  stress:0,  energie:+14 } },
+];
+
+/* ===== State ===== */
+let state = { values:{...START}, turns:0 };
+let spawnTimer = null;
+
+/* ===== DOM ===== */
+const pf = document.getElementById('playfield');
+const bars = {
+  laune: document.getElementById('bar-laune'),
+  gesundheit: document.getElementById('bar-gesundheit'),
+  stress: document.getElementById('bar-stress'),
+  energie: document.getElementById('bar-energie')
+};
+const vals = {
+  laune: document.getElementById('val-laune'),
+  gesundheit: document.getElementById('val-gesundheit'),
+  stress: document.getElementById('val-stress'),
+  energie: document.getElementById('val-energie')
+};
+const turnsEl = document.getElementById('turns');
+const overlayEl = document.getElementById('overlay');
+const whyList = document.getElementById('whyList');
+document.getElementById('resetBtn').addEventListener('click', reset);
+document.getElementById('againBtn').addEventListener('click', reset);
+
+/* ===== Helpers ===== */
+const clamp01 = v => Math.max(0, Math.min(100, v));
+
+function colorFor(key, v){
+  if(key==='stress'){
+    if(v > THRESHOLDS.stressRed) return 'var(--red)';
+    if(v > 65) return 'var(--bad)';
+    if(v > 40) return 'var(--warn)';
+    return 'var(--ok)';
+  } else {
+    if(v < THRESHOLDS.lowRed) return 'var(--red)';
+    if(v < 35) return 'var(--bad)';
+    if(v < 60) return 'var(--warn)';
+    return 'var(--ok)';
+  }
+}
+function pretty(k){ return ({laune:'Laune', gesundheit:'Gesundheit', stress:'Stress', energie:'Energie'})[k]; }
+
+/* ===== Scales Render ===== */
+function renderScales(){
+  // horizontal ones: width %
+  bars.laune.style.width = state.values.laune + '%';
+  bars.energie.style.width = state.values.energie + '%';
+  bars.laune.style.backgroundColor = colorFor('laune', state.values.laune);
+  bars.energie.style.backgroundColor = colorFor('energie', state.values.energie);
+  vals.laune.textContent = Math.round(state.values.laune)+'%';
+  vals.energie.textContent = Math.round(state.values.energie)+'%';
+
+  // vertical: height %
+  bars.gesundheit.style.height = state.values.gesundheit + '%';
+  bars.stress.style.height = state.values.stress + '%';
+  bars.gesundheit.style.backgroundColor = colorFor('gesundheit', state.values.gesundheit);
+  bars.stress.style.backgroundColor = colorFor('stress', state.values.stress);
+  vals.gesundheit.textContent = Math.round(state.values.gesundheit)+'%';
+  vals.stress.textContent = Math.round(state.values.stress)+'%';
+
+  turnsEl.textContent = 'Züge: ' + state.turns;
+}
+
+/* ===== Game Logic ===== */
+function applyEffects(effects){
+  state.turns++;
+  for(const [k,delta] of Object.entries(effects)){
+    state.values[k] = clamp01(state.values[k] + delta);
+  }
+  renderScales();
+  checkLose();
+}
+
+function checkLose(){
+  const reds = [];
+  if(state.values.laune < THRESHOLDS.lowRed) reds.push(['🙂 Laune', `${Math.round(state.values.laune)}% < 20%`]);
+  if(state.values.gesundheit < THRESHOLDS.lowRed) reds.push(['❤️ Gesundheit', `${Math.round(state.values.gesundheit)}% < 20%`]);
+  if(state.values.energie < THRESHOLDS.lowRed) reds.push(['⚡ Energie', `${Math.round(state.values.energie)}% < 20%`]);
+  if(state.values.stress > THRESHOLDS.stressRed) reds.push(['🔥 Stress', `${Math.round(state.values.stress)}% > 80%`]);
+
+  if(reds.length >= 2){
+    whyList.innerHTML = reds.map(([n,txt])=>`<div class="row"><span class="dot"></span><span>${n}: ${txt}</span></div>`).join('');
+    overlayEl.style.display = 'grid';
+    stopSpawning();
+  }
+}
+
+/* ===== Spawning ===== */
+function clearChips(){
+  [...pf.querySelectorAll('.chip')].forEach(n=>n.remove());
+}
+
+function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
+function choice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+/* Position presets inside the playfield (normalized 0..1) */
+const PRESETS = [
+  // single
+  [{x:.5,y:.5}],
+  [{x:.15,y:.15}],
+  [{x:.85,y:.2}],
+  [{x:.2,y:.8}],
+  [{x:.8,y:.8}],
+  [{x:.5,y:.25}],
+  [{x:.5,y:.75}],
+  // double neighbors
+  [{x:.40,y:.5},{x:.60,y:.5}],
+  [{x:.5,y:.40},{x:.5,y:.60}],
+  // diagonal corners duo
+  [{x:.2,y:.2},{x:.8,y:.8}],
+  [{x:.2,y:.8},{x:.8,y:.2}],
+];
+
+function spawnOnce(){
+  clearChips();
+
+  // decide 1 or 2 chips (weight toward 1 a bit)
+  const count = Math.random()<0.65 ? 1 : 2;
+
+  // choose preset of enough points, else random positions
+  let points = choice(PRESETS.filter(p=>p.length===count));
+  if(!points){
+    points = new Array(count).fill(0).map(_=>({x:Math.random()*0.8+0.1, y:Math.random()*0.8+0.1}));
+  }
+
+  // choose actions (no dup restriction)
+  const picks = new Array(count).fill(0).map(_=> choice(ACTIONS));
+
+  const rect = pf.getBoundingClientRect();
+  const chipSize = Math.min(64, Math.max(56, Math.floor(Math.min(rect.width, rect.height)*0.12)));
+
+  picks.forEach((act, i)=>{
+    const el = document.createElement('div');
+    el.className = 'chip';
+    el.style.width = chipSize+'px';
+    el.style.height = chipSize+'px';
+    el.style.borderRadius = Math.max(12, Math.floor(chipSize*0.25))+'px';
+    el.textContent = act.emoji;
+    // position
+    const x = points[i].x, y = points[i].y;
+    const left = Math.round(x*(rect.width - chipSize));
+    const top  = Math.round(y*(rect.height - chipSize));
+    el.style.left = left+'px';
+    el.style.top  = top+'px';
+
+    el.addEventListener('click', ()=>{
+      if(el.classList.contains('fade')) return;
+      el.classList.add('fade');
+      applyEffects(act.effects);
+      // remove shortly after click
+      setTimeout(()=>{ el.remove(); if(pf.querySelectorAll('.chip').length===0){ /* nothing */ } }, 120);
+    });
+
+    pf.appendChild(el);
+  });
+
+  // auto-despawn after 2.5–4s
+  const life = randInt(2500, 4000);
+  setTimeout(()=>{
+    [...pf.querySelectorAll('.chip')].forEach(n=> n.remove());
+  }, life);
+}
+
+function startSpawning(){
+  stopSpawning();
+  spawnOnce();
+  spawnTimer = setInterval(()=>{
+    spawnOnce();
+  }, randInt(1400, 2200));
+}
+function stopSpawning(){
+  if(spawnTimer){ clearInterval(spawnTimer); spawnTimer = null; }
+}
+
+/* ===== Reset / Init ===== */
+function reset(){
+  overlayEl.style.display = 'none';
+  state = { values:{...START}, turns:0 };
+  renderScales();
+  clearChips();
+  startSpawning();
+}
+renderScales();
+startSpawning();
+
+/* Resize: reflow chip positions next wave */
+window.addEventListener('resize', ()=>{ /* chips repositioned on next spawn */ });
+
+</script>
+</body>
+</html>

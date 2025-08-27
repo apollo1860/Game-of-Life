@@ -28,13 +28,12 @@
   .btn{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer}
   .btn:hover{border-color:#d1d5db}
 
-  /* Board: 3x3 – Top scale, center row with left scale | playfield | right scale, bottom scale */
   .board{
     display:grid;
     grid-template-rows: var(--barH) 1fr var(--barH);
     grid-template-columns: var(--barW) 1fr var(--barW);
     gap:8px;
-    height:calc(100vh - 140px); /* roughly header+footer space */
+    height:calc(100vh - 140px);
     min-height:420px;
   }
 
@@ -58,7 +57,6 @@
   .bar-v{position:absolute;left:0;bottom:0;width:100%;height:50%;background:var(--ok);transition:height .2s ease, background-color .2s ease}
   .value-v{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.75rem}
 
-  /* positions in grid */
   #topScale{grid-row:1;grid-column:1/4}
   #bottomScale{grid-row:3;grid-column:1/4}
   #leftScale{grid-row:1/4;grid-column:1}
@@ -71,16 +69,18 @@
   }
   .hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:var(--muted);font-size:.9rem;pointer-events:none}
 
-  /* Spawned action chips */
+  /* Chips */
   .chip{
     position:absolute;display:flex;align-items:center;justify-content:center;
     width:64px;height:64px;border-radius:16px;border:1px solid var(--line);background:#fff;
     font-size:32px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.04);
-    transition:transform .08s ease, box-shadow .2s ease, opacity .2s ease;
+    transition:transform .08s ease, box-shadow .2s ease, opacity 1s linear; /* opacity anim für Fade */
+    opacity:1;
   }
   .chip:active{transform:translateY(1px) scale(.98)}
   .chip:hover{box-shadow:0 6px 18px rgba(0,0,0,.06)}
-  .chip.fade{opacity:.3}
+  .chip.clicked{opacity:.3}            /* kurze Rückmeldung beim Klicken */
+  .chip.aging{opacity:0;}              /* ab Sekunde 4 → auf 0 in 1s runter */
 
   /* Lose overlay */
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;place-items:center;padding:16px}
@@ -110,33 +110,28 @@
   </div>
 
   <div class="board">
-    <!-- Top horizontal scale (Laune) -->
     <div id="topScale" class="scale-h">
       <div class="name">🙂 Laune</div>
       <div class="meter"><div id="bar-laune" class="bar"></div></div>
       <div id="val-laune" class="value">—</div>
     </div>
 
-    <!-- Left vertical scale (Gesundheit) -->
     <div id="leftScale" class="scale-v">
       <div class="name">Gesundheit</div>
       <div class="meter-v"><div id="bar-gesundheit" class="bar-v"></div></div>
       <div id="val-gesundheit" class="value-v">—</div>
     </div>
 
-    <!-- Playfield (spawn area) -->
     <div id="playfield" class="playfield">
       <div class="hint">Tippe die auftauchenden Emojis</div>
     </div>
 
-    <!-- Right vertical scale (Stress) -->
     <div id="rightScale" class="scale-v">
       <div class="name" style="color:var(--muted)">Stress</div>
       <div class="meter-v"><div id="bar-stress" class="bar-v"></div></div>
       <div id="val-stress" class="value-v">—</div>
     </div>
 
-    <!-- Bottom horizontal scale (Energie) -->
     <div id="bottomScale" class="scale-h">
       <div class="name">⚡ Energie</div>
       <div class="meter"><div id="bar-energie" class="bar"></div></div>
@@ -146,11 +141,10 @@
 
   <div class="footer">
     <div class="subtitle">Rot-Bereiche: Laune/Gesundheit/Energie &lt; <strong>20</strong> • Stress &gt; <strong>80</strong></div>
-    <div class="subtitle">Alle 2 s: natürliche Verschlechterung (Laune↓, Gesundheit↓, Energie↓, Stress↑)</div>
+    <div class="subtitle">Alle 2 s: Decay (Laune−2, Gesundheit−1, Energie−2, Stress+2)</div>
   </div>
 </div>
 
-<!-- Lose -->
 <div class="overlay" id="overlay">
   <div class="modal">
     <h2>🚨 Doppel-Rot!</h2>
@@ -166,8 +160,6 @@
 /* ===== Config ===== */
 const THRESHOLDS = { lowRed:20, stressRed:80 };
 const START = { laune:55, gesundheit:60, stress:45, energie:50 };
-
-/* natürlicher Verfall alle 2 Sekunden (schlechter für den Spieler) */
 const DECAY = { laune:-2, gesundheit:-1, energie:-2, stress:+2 };
 const DECAY_INTERVAL_MS = 2000;
 
@@ -227,7 +219,6 @@ function pretty(k){ return ({laune:'Laune', gesundheit:'Gesundheit', stress:'Str
 
 /* ===== Scales Render ===== */
 function renderScales(){
-  // horizontal ones: width %
   bars.laune.style.width = state.values.laune + '%';
   bars.energie.style.width = state.values.energie + '%';
   bars.laune.style.backgroundColor = colorFor('laune', state.values.laune);
@@ -235,7 +226,6 @@ function renderScales(){
   vals.laune.textContent = Math.round(state.values.laune)+'%';
   vals.energie.textContent = Math.round(state.values.energie)+'%';
 
-  // vertical: height %
   bars.gesundheit.style.height = state.values.gesundheit + '%';
   bars.stress.style.height = state.values.stress + '%';
   bars.gesundheit.style.backgroundColor = colorFor('gesundheit', state.values.gesundheit);
@@ -271,14 +261,12 @@ function checkLose(){
   }
 }
 
-/* ===== Spawning (Frequenz erhöht) ===== */
+/* ===== Spawning ===== */
 function clearChips(){ [...pf.querySelectorAll('.chip')].forEach(n=>n.remove()); }
 function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
 function choice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 
-/* Position presets inside the playfield (normalized 0..1) */
 const PRESETS = [
-  // single
   [{x:.5,y:.5}],
   [{x:.15,y:.15}],
   [{x:.85,y:.2}],
@@ -286,10 +274,8 @@ const PRESETS = [
   [{x:.8,y:.8}],
   [{x:.5,y:.25}],
   [{x:.5,y:.75}],
-  // double neighbors
   [{x:.40,y:.5},{x:.60,y:.5}],
   [{x:.5,y:.40},{x:.5,y:.60}],
-  // diagonal corners duo
   [{x:.2,y:.2},{x:.8,y:.8}],
   [{x:.2,y:.8},{x:.8,y:.2}],
 ];
@@ -297,16 +283,13 @@ const PRESETS = [
 function spawnOnce(){
   clearChips();
 
-  // erhöhte Chance auf zwei Chips
   const count = Math.random()<0.45 ? 1 : 2;
 
-  // choose preset of enough points, else random positions
   let points = choice(PRESETS.filter(p=>p.length===count));
   if(!points){
     points = new Array(count).fill(0).map(_=>({x:Math.random()*0.8+0.1, y:Math.random()*0.8+0.1}));
   }
 
-  // choose actions (no dup restriction)
   const picks = new Array(count).fill(0).map(_=> choice(ACTIONS));
 
   const rect = pf.getBoundingClientRect();
@@ -319,7 +302,7 @@ function spawnOnce(){
     el.style.height = chipSize+'px';
     el.style.borderRadius = Math.max(12, Math.floor(chipSize*0.25))+'px';
     el.textContent = act.emoji;
-    // position
+
     const x = points[i].x, y = points[i].y;
     const left = Math.round(x*(rect.width - chipSize));
     const top  = Math.round(y*(rect.height - chipSize));
@@ -327,31 +310,47 @@ function spawnOnce(){
     el.style.top  = top+'px';
 
     el.addEventListener('click', ()=>{
-      if(el.classList.contains('fade')) return;
-      el.classList.add('fade');
+      if(el.classList.contains('clicked')) return;
+      el.classList.add('clicked'); // visuelles Feedback
       applyEffects(act.effects);
       setTimeout(()=>{ el.remove(); }, 120);
     });
 
     pf.appendChild(el);
-  });
 
-  // schnellere Despawn-Zeit
-  const life = randInt(1800, 2800);
-  setTimeout(()=>{ clearChips(); }, life);
+    /* Sichtbarkeit exakt 5s, ab 4s Fade */
+    const LIFE_MS = 5000;
+    const FADE_START_MS = 4000;
+
+    const fadeTimer = setTimeout(()=> {
+      if(document.body.contains(el)){
+        el.classList.add('aging'); // CSS transition: opacity 1s linear → 0
+      }
+    }, FADE_START_MS);
+
+    const removeTimer = setTimeout(()=> {
+      if(document.body.contains(el)) el.remove();
+    }, LIFE_MS);
+
+    // Sicherheit: falls overlay aufgeht, räumen wir später beim Stop auf
+    el._timers = [fadeTimer, removeTimer];
+  });
 }
 
 function startSpawning(){
   stopSpawning();
   spawnOnce();
-  // höhere Schlagzahl
+  // hohe Schlagzahl beibehalten
   spawnTimer = setInterval(()=>{ spawnOnce(); }, randInt(700, 1100));
 }
-function stopSpawning(){ if(spawnTimer){ clearInterval(spawnTimer); spawnTimer = null; } }
+function stopSpawning(){
+  if(spawnTimer){ clearInterval(spawnTimer); spawnTimer = null; }
+  // offene Timer der Chips sind egal – wir entfernen alle Chips jetzt
+  clearChips();
+}
 
 /* ===== Natural Decay ===== */
 function decayTick(){
-  // Laune↓, Gesundheit↓, Energie↓, Stress↑
   state.values.laune      = clamp01(state.values.laune + DECAY.laune);
   state.values.gesundheit = clamp01(state.values.gesundheit + DECAY.gesundheit);
   state.values.energie    = clamp01(state.values.energie + DECAY.energie);
@@ -359,14 +358,8 @@ function decayTick(){
   renderScales();
   checkLose();
 }
-
-function startDecay(){
-  stopDecay();
-  decayTimer = setInterval(decayTick, DECAY_INTERVAL_MS);
-}
-function stopDecay(){
-  if(decayTimer){ clearInterval(decayTimer); decayTimer = null; }
-}
+function startDecay(){ stopDecay(); decayTimer = setInterval(decayTick, DECAY_INTERVAL_MS); }
+function stopDecay(){ if(decayTimer){ clearInterval(decayTimer); decayTimer = null; } }
 
 /* ===== Reset / Init ===== */
 function reset(){
@@ -381,9 +374,7 @@ renderScales();
 startSpawning();
 startDecay();
 
-/* Resize: reflow chip positions next wave */
-window.addEventListener('resize', ()=>{ /* chips repositioned on next spawn */ });
-
+window.addEventListener('resize', ()=>{ /* Chips werden beim nächsten Spawn neu platziert */ });
 </script>
 </body>
 </html>
